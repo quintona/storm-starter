@@ -1,3 +1,8 @@
+# Changes from original
+I have added the original clojure integration tests from: https://github.com/schleyfox/storm-starter, but just for the word count example so that I can use that as a stable based for further integration tests using clojure.
+
+I have also upgraded so that the project works with lein 2.
+
 # Example Storm topologies
 
 storm-starter contains a variety of examples of using Storm. If this is your first time checking out Storm, check out these topologies first:
