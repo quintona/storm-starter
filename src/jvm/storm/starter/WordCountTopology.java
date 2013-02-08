@@ -4,6 +4,7 @@ import storm.starter.spout.RandomSentenceSpout;
 import backtype.storm.Config;
 import backtype.storm.LocalCluster;
 import backtype.storm.StormSubmitter;
+import backtype.storm.generated.StormTopology;
 import backtype.storm.task.ShellBolt;
 import backtype.storm.task.TopologyContext;
 import backtype.storm.topology.BasicOutputCollector;
@@ -21,20 +22,19 @@ import java.util.Map;
  * This topology demonstrates Storm's stream groupings and multilang capabilities.
  */
 public class WordCountTopology {
-    public static class SplitSentence extends ShellBolt implements IRichBolt {
-        
-        public SplitSentence() {
-            super("python", "splitsentence.py");
-        }
+    public static class SplitSentence extends BaseBasicBolt {
+    	
+    	@Override
+        public void execute(Tuple tuple, BasicOutputCollector collector) {
+    		String sentence = tuple.getString(0);
+    		for(String word: sentence.split(" ")){
+    			collector.emit(new Values(word));
+    		}
+    	}
 
         @Override
         public void declareOutputFields(OutputFieldsDeclarer declarer) {
             declarer.declare(new Fields("word"));
-        }
-
-        @Override
-        public Map<String, Object> getComponentConfiguration() {
-            return null;
         }
     }  
     
@@ -57,8 +57,7 @@ public class WordCountTopology {
         }
     }
     
-    public static void main(String[] args) throws Exception {
-        
+    public static StormTopology makeTopology() {
         TopologyBuilder builder = new TopologyBuilder();
         
         builder.setSpout("spout", new RandomSentenceSpout(), 5);
@@ -67,6 +66,11 @@ public class WordCountTopology {
                  .shuffleGrouping("spout");
         builder.setBolt("count", new WordCount(), 12)
                  .fieldsGrouping("split", new Fields("word"));
+        return builder.createTopology();
+    }
+    
+    public static void main(String[] args) throws Exception {
+        
 
         Config conf = new Config();
         conf.setDebug(true);
@@ -75,12 +79,12 @@ public class WordCountTopology {
         if(args!=null && args.length > 0) {
             conf.setNumWorkers(3);
             
-            StormSubmitter.submitTopology(args[0], conf, builder.createTopology());
+            StormSubmitter.submitTopology(args[0], conf, makeTopology());
         } else {        
             conf.setMaxTaskParallelism(3);
 
             LocalCluster cluster = new LocalCluster();
-            cluster.submitTopology("word-count", conf, builder.createTopology());
+            cluster.submitTopology("word-count", conf, makeTopology());
         
             Thread.sleep(10000);
 
