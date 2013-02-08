@@ -22,6 +22,7 @@
           {}
           output))))
 
+
 (deftest test-word-count
     (with-simulated-time-local-cluster [cluster :supervisors 4]
       (let [ topology (WordCountTopology/makeTopology)

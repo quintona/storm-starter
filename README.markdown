@@ -1,7 +1,10 @@
 # Changes from original
-I have added the original clojure integration tests from: https://github.com/schleyfox/storm-starter, but just for the word count example so that I can use that as a stable based for further integration tests using clojure.
 
-I have also upgraded so that the project works with lein 2.
+I have made a few changes/upgrades to the start project:
+
+1. I have added the original clojure integration tests from: https://github.com/schleyfox/storm-starter, but just for the word count example so that I can use that as a stable based for further integration tests using clojure.
+2. I have also upgraded so that the project works with lein 2.
+3. I have implemented a trident integration test of the trident word count topology. This is based on https://github.com/nathanmarz/storm/blob/master/test/clj/storm/trident/integration_test.clj, but this test will exercise the java defined topology. 
 
 # Example Storm topologies
 

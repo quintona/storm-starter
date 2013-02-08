@@ -1,5 +1,7 @@
 package storm.starter.trident;
 
+import storm.trident.spout.IBatchSpout;
+import storm.trident.spout.ITridentSpout;
 import storm.trident.testing.FixedBatchSpout;
 import backtype.storm.Config;
 import backtype.storm.LocalCluster;
@@ -8,6 +10,7 @@ import backtype.storm.StormSubmitter;
 import backtype.storm.generated.StormTopology;
 import backtype.storm.tuple.Fields;
 import backtype.storm.tuple.Values;
+import storm.trident.Stream;
 import storm.trident.TridentState;
 import storm.trident.TridentTopology;
 import storm.trident.operation.BaseFunction;
@@ -32,19 +35,26 @@ public class TridentWordCount {
         }
     }
     
-    public static StormTopology buildTopology(LocalDRPC drpc) {
-        FixedBatchSpout spout = new FixedBatchSpout(new Fields("sentence"), 3,
+    public static TridentTopology buildTopology(ITridentSpout spout, LocalDRPC drpc) {
+    	TridentTopology topology = new TridentTopology(); 
+    	Stream wordStream = null;
+    	
+    	if(spout == null){
+    		FixedBatchSpout fixedSpout = new FixedBatchSpout(new Fields("sentence"), 3,
                 new Values("the cow jumped over the moon"),
                 new Values("the man went to the store and bought some candy"),
                 new Values("four score and seven years ago"),
                 new Values("how many apples can you eat"),
                 new Values("to be or not to be the person"));
-        spout.setCycle(true);
+        	((FixedBatchSpout)spout).setCycle(true);
+        	wordStream = topology.newStream("spout1", fixedSpout)
+            	.parallelismHint(16);
+    	} else {
+    		wordStream = topology.newStream("spout1", spout)
+                	.parallelismHint(16);
+    	}
         
-        TridentTopology topology = new TridentTopology();        
-        TridentState wordCounts =
-              topology.newStream("spout1", spout)
-                .parallelismHint(16)
+    	TridentState wordCounts = wordStream
                 .each(new Fields("sentence"), new Split(), new Fields("word"))
                 .groupBy(new Fields("word"))
                 .persistentAggregate(new MemoryMapState.Factory(),
@@ -58,7 +68,7 @@ public class TridentWordCount {
                 .each(new Fields("count"), new FilterNull())
                 .aggregate(new Fields("count"), new Sum(), new Fields("sum"))
                 ;
-        return topology.build();
+        return topology;
     }
     
     public static void main(String[] args) throws Exception {
@@ -67,14 +77,14 @@ public class TridentWordCount {
         if(args.length==0) {
             LocalDRPC drpc = new LocalDRPC();
             LocalCluster cluster = new LocalCluster();
-            cluster.submitTopology("wordCounter", conf, buildTopology(drpc));
+            cluster.submitTopology("wordCounter", conf, buildTopology(null, drpc).build());
             for(int i=0; i<100; i++) {
                 System.out.println("DRPC RESULT: " + drpc.execute("words", "cat the dog jumped"));
                 Thread.sleep(1000);
             }
         } else {
             conf.setNumWorkers(3);
-            StormSubmitter.submitTopology(args[0], conf, buildTopology(null));        
+            StormSubmitter.submitTopology(args[0], conf, buildTopology(null, null).build());        
         }
     }
 }
