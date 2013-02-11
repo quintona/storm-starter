@@ -1,5 +1,7 @@
 package storm.starter.trident;
 
+import java.util.UUID;
+
 import storm.trident.spout.IBatchSpout;
 import storm.trident.spout.ITridentSpout;
 import storm.trident.testing.FixedBatchSpout;
@@ -35,9 +37,24 @@ public class TridentWordCount {
         }
     }
     
+    public static class SentenceIdGenerator extends BaseFunction {
+        @Override
+        public void execute(TridentTuple tuple, TridentCollector collector) {
+        	collector.emit(new Values(UUID.randomUUID()));                
+        }
+    }
+    
+    public static class PrintlnFunction extends BaseFunction {
+        @Override
+        public void execute(TridentTuple tuple, TridentCollector collector) {
+            System.out.println("New Tuple for printing: " + tuple.toString());
+            collector.emit(new Values("dummy"));
+        }
+    }
+    
     public static TridentTopology buildTopology(ITridentSpout spout, LocalDRPC drpc) {
     	TridentTopology topology = new TridentTopology(); 
-    	Stream wordStream = null;
+    	Stream sentenceStream = null;
     	
     	if(spout == null){
     		FixedBatchSpout fixedSpout = new FixedBatchSpout(new Fields("sentence"), 3,
@@ -46,20 +63,33 @@ public class TridentWordCount {
                 new Values("four score and seven years ago"),
                 new Values("how many apples can you eat"),
                 new Values("to be or not to be the person"));
-        	((FixedBatchSpout)spout).setCycle(true);
-        	wordStream = topology.newStream("spout1", fixedSpout)
-            	.parallelismHint(16);
+        	((FixedBatchSpout)fixedSpout).setCycle(true);
+        	sentenceStream = topology.newStream("spout1", fixedSpout)
+            	.parallelismHint(16)
+            	.each(new Fields("sentence"), new SentenceIdGenerator(), new Fields("sentenceId"));
     	} else {
-    		wordStream = topology.newStream("spout1", spout)
-                	.parallelismHint(16);
+    		sentenceStream = topology.newStream("spout1", spout)
+                	.parallelismHint(16)
+                	.each(new Fields("sentence"), new SentenceIdGenerator(), new Fields("sentenceId"));
     	}
+    	
+    	Stream wordStream = sentenceStream.each(new Fields("sentence"), new Split(), new Fields("word"));
         
     	TridentState wordCounts = wordStream
-                .each(new Fields("sentence"), new Split(), new Fields("word"))
                 .groupBy(new Fields("word"))
                 .persistentAggregate(new MemoryMapState.Factory(),
                                      new Count(), new Fields("count"))         
                 .parallelismHint(16);
+    	
+    	TridentState localWordCounts = wordStream
+                .groupBy(new Fields("sentenceId","word"))
+                .persistentAggregate(new MemoryMapState.Factory(),
+                                     new Count(), new Fields("localCount"))         
+                .parallelismHint(16);
+    	
+    	//Stream batchTotalStream = wordStream.groupBy(new Fields("word"))
+    	//							.aggregate(new Fields("word"), new Count(), new Fields("localTotal"));
+    								//.each(new Fields("word", "localTotal"), new PrintlnFunction(), new Fields());
                 
         topology.newDRPCStream("words", drpc)
                 .each(new Fields("args"), new Split(), new Fields("word"))
@@ -68,6 +98,17 @@ public class TridentWordCount {
                 .each(new Fields("count"), new FilterNull())
                 .aggregate(new Fields("count"), new Sum(), new Fields("sum"))
                 ;
+        
+        Stream globalTotalStream = wordCounts.newValuesStream();
+        							//.each(new Fields("word", "count"), new PrintlnFunction(), new Fields());
+        
+        Stream localTotalStream = localWordCounts.newValuesStream()
+        		.project(new Fields("word","localCount"));
+				//.each(new Fields("word", "localCount"), new PrintlnFunction(), new Fields());
+        
+        topology.join(globalTotalStream, new Fields("word"), localTotalStream , new Fields("word"),new Fields("word","count","localCount"))
+        				.each(new Fields("word","count", "localCount"), new PrintlnFunction(), new Fields());
+        
         return topology;
     }
     
